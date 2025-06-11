@@ -68,17 +68,17 @@ const GridBuilder = () => {
   };
 
   const handleDragStart: ReactGridLayoutProps['onDragStart'] = (
-    layout,
+    _layout,
     oldItem
   ) => {
     setDraggedItem(oldItem.i);
   };
 
   const handleDragStop: ReactGridLayoutProps['onDragStop'] = (
-    layout,
-    oldItem,
-    newItem,
-    placeholder,
+    _layout,
+    _oldItem,
+    _newItem,
+    _placeholder,
     e
   ) => {
     if (!binRef.current || !draggedItem) {
@@ -164,7 +164,7 @@ const GridBuilder = () => {
             </h2>
           </div>
           <div className="bg-gray-900/50 p-4 rounded-lg border border-gray-600 min-w-[600px]">
-            <GridLayout
+            <ResponsiveGridLayout
               className="layout"
               layout={layout}
               cols={12}
@@ -198,7 +198,7 @@ const GridBuilder = () => {
                   </div>
                 </div>
               ))}
-            </GridLayout>
+            </ResponsiveGridLayout>
           </div>
         </div>
 
@@ -225,9 +225,9 @@ const GridBuilder = () => {
         {/* Attribution */}
         <div className="text-center pt-8 border-t border-gray-700">
           <p className="text-gray-400 text-sm">
-            Created with care by{' '}
+            Created and Crafted with Care by{' '}
             <a
-              href="https://github.com/ganguly"
+              href="https://github.com/biswa-ganguly"
               target="_blank"
               rel="noopener noreferrer"
               className="text-blue-400 hover:text-blue-300 transition-colors duration-200 font-medium"
