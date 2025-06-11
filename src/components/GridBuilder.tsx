@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useRef, useState } from 'react';
 import GridLayout from 'react-grid-layout';
 import type { Layout } from 'react-grid-layout';
 import 'react-grid-layout/css/styles.css';
@@ -42,22 +42,28 @@ const GridBuilder = () => {
     alert('Code copied to clipboard!');
   };
 
-  const handleDrop = (_: unknown, oldItem: Layout, newItem: Layout) => {
+  const handleDrop = (_layout: Layout[], item: Layout, e: DragEvent) => {
     const bin = binRef.current;
     if (!bin) return;
 
-    const isInBin =
-      newItem.y === 0 && newItem.x >= 0 && newItem.x <= 12;
+    const binRect = bin.getBoundingClientRect();
+    const mouseX = e.clientX;
+    const mouseY = e.clientY;
 
-    // Only remove if dragged into row 0 (top area)
-    if (isInBin && oldItem.y < 1) {
-      removeItem(oldItem.i);
+    const isInBin =
+      mouseX >= binRect.left &&
+      mouseX <= binRect.right &&
+      mouseY >= binRect.top &&
+      mouseY <= binRect.bottom;
+
+    if (isInBin) {
+      removeItem(item.i);
     }
   };
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6">
-      {/* Top Toolbar */}
+      {/* Toolbar */}
       <div className="flex flex-wrap justify-between items-center gap-4">
         <div className="flex gap-2">
           <button onClick={addItem} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
@@ -80,7 +86,7 @@ const GridBuilder = () => {
         </div>
       </div>
 
-      {/* Bin Drop Area */}
+      {/* Bin Area */}
       <div
         ref={binRef}
         className="h-16 bg-red-100 border-2 border-red-400 border-dashed rounded flex items-center justify-center text-red-700 font-semibold"
@@ -88,7 +94,7 @@ const GridBuilder = () => {
         🗑 Drag here to delete a box
       </div>
 
-      {/* Grid Layout */}
+      {/* Grid Area */}
       <div className="bg-gray-100 p-4 rounded border shadow-inner">
         <GridLayout
           className="layout"
@@ -118,7 +124,7 @@ const GridBuilder = () => {
         </GridLayout>
       </div>
 
-      {/* Generated Code */}
+      {/* Code Output */}
       <div>
         <h2 className="font-bold text-lg mb-2">🔧 Generated Code:</h2>
         <pre className="bg-black text-green-400 p-4 rounded text-sm whitespace-pre-wrap overflow-x-auto">
