@@ -1,8 +1,12 @@
-import { useRef, useState } from 'react';
-import GridLayout from 'react-grid-layout';
-import type { Layout } from 'react-grid-layout';
+'use client';
+
+import { useRef, useState, useEffect } from 'react';
+import GridLayout, { type Layout, WidthProvider } from 'react-grid-layout';
+import type { ReactGridLayoutProps } from 'react-grid-layout';
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
+
+const ResponsiveGridLayout = WidthProvider(GridLayout);
 
 const GridBuilder = () => {
   const [layout, setLayout] = useState<Layout[]>([
@@ -10,60 +14,98 @@ const GridBuilder = () => {
   ]);
 
   const [codeFormat, setCodeFormat] = useState<'html' | 'react'>('html');
+  const [draggedItem, setDraggedItem] = useState<string | null>(null);
   const binRef = useRef<HTMLDivElement | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [gridWidth, setGridWidth] = useState<number>(1200);
+
+  useEffect(() => {
+    const updateWidth = () => {
+      if (containerRef.current) {
+        setGridWidth(containerRef.current.offsetWidth);
+      }
+    };
+
+    updateWidth();
+    const observer = new ResizeObserver(updateWidth);
+    if (containerRef.current) observer.observe(containerRef.current);
+
+    return () => observer.disconnect();
+  }, []);
 
   const addItem = () => {
-    const newItem = {
-      i: String(Date.now()), // Unique ID
+    const newItem: Layout = {
+      i: String(Date.now()),
       x: (layout.length * 3) % 12,
       y: Infinity,
       w: 3,
       h: 2,
     };
-    setLayout([...layout, newItem]);
+    setLayout(prev => [...prev, newItem]);
   };
 
   const removeItem = (id: string) => {
-    setLayout(layout.filter(item => item.i !== id));
+    setLayout(prev => prev.filter(item => item.i !== id));
   };
 
   const generateCode = () => {
-    return layout.map(item => {
-      const classNames = `col-span-${item.w} row-span-${item.h} bg-gray-100 p-4 rounded-lg shadow-sm`;
-      return codeFormat === 'html'
-        ? `<div class="${classNames}">Box ${item.i}</div>`
-        : `<div className="${classNames}">Box ${item.i}</div>`;
-    }).join('\n');
+    return layout
+      .map(item => {
+        const classNames = `col-span-${item.w} row-span-${item.h} bg-gray-100 p-4 rounded-lg shadow-sm`;
+        return codeFormat === 'html'
+          ? `<div class="${classNames}">Box ${item.i}</div>`
+          : `<div className="${classNames}">Box ${item.i}</div>`;
+      })
+      .join('\n');
   };
 
   const copyToClipboard = () => {
     const code = `<div class="${codeFormat === 'html' ? 'grid grid-cols-12 gap-4' : 'grid grid-cols-12 gap-4'}">\n${generateCode()}\n</div>`;
-    navigator.clipboard.writeText(code);
-    alert('Code copied to clipboard!');
+    if (typeof window !== 'undefined') {
+      navigator.clipboard.writeText(code);
+      alert('Code copied to clipboard!');
+    }
   };
 
-  const handleDrop = (_layout: Layout[], item: Layout, e: DragEvent) => {
-    const bin = binRef.current;
-    if (!bin) return;
+  const handleDragStart: ReactGridLayoutProps['onDragStart'] = (
+    layout,
+    oldItem
+  ) => {
+    setDraggedItem(oldItem.i);
+  };
 
-    const binRect = bin.getBoundingClientRect();
+  const handleDragStop: ReactGridLayoutProps['onDragStop'] = (
+    layout,
+    oldItem,
+    newItem,
+    placeholder,
+    e
+  ) => {
+    if (!binRef.current || !draggedItem) {
+      setDraggedItem(null);
+      return;
+    }
+
+    const binRect = binRef.current.getBoundingClientRect();
     const mouseX = e.clientX;
     const mouseY = e.clientY;
 
-    const isInBin =
+    const isOverBin =
       mouseX >= binRect.left &&
       mouseX <= binRect.right &&
       mouseY >= binRect.top &&
       mouseY <= binRect.bottom;
 
-    if (isInBin) {
-      removeItem(item.i);
+    if (isOverBin) {
+      removeItem(draggedItem);
     }
+
+    setDraggedItem(null);
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-slate-900 to-black text-white">
-      <div className="p-8 max-w-7xl mx-auto space-y-8">
+    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-slate-900 to-black text-white px-4">
+      <div className="p-6 max-w-7xl mx-auto space-y-8" ref={containerRef}>
         {/* Header */}
         <div className="text-center border-b border-gray-700 pb-6">
           <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent mb-2">
@@ -74,15 +116,15 @@ const GridBuilder = () => {
 
         {/* Toolbar */}
         <div className="flex flex-wrap justify-between items-center gap-4 bg-gray-800/50 backdrop-blur-sm p-6 rounded-xl border border-gray-700">
-          <div className="flex gap-3">
-            <button 
-              onClick={addItem} 
+          <div className="flex gap-3 flex-wrap">
+            <button
+              onClick={addItem}
               className="px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg hover:from-blue-700 hover:to-blue-800 transition-all duration-200 shadow-lg hover:shadow-blue-500/20 font-medium flex items-center gap-2"
             >
               <span className="text-lg">+</span> Add Box
             </button>
-            <button 
-              onClick={copyToClipboard} 
+            <button
+              onClick={copyToClipboard}
               className="px-6 py-3 bg-gradient-to-r from-emerald-600 to-emerald-700 text-white rounded-lg hover:from-emerald-700 hover:to-emerald-800 transition-all duration-200 shadow-lg hover:shadow-emerald-500/20 font-medium flex items-center gap-2"
             >
               <span className="text-lg">📋</span> Copy Code
@@ -104,42 +146,53 @@ const GridBuilder = () => {
         {/* Bin Area */}
         <div
           ref={binRef}
-          className="h-20 bg-gradient-to-r from-red-900/20 to-red-800/20 border-2 border-red-500/50 border-dashed rounded-xl flex items-center justify-center text-red-400 font-semibold text-lg backdrop-blur-sm hover:border-red-400 transition-colors duration-200"
+          className={`h-20 bg-gradient-to-r from-red-900/20 to-red-800/20 border-2 border-dashed rounded-xl flex items-center justify-center text-red-400 font-semibold text-lg backdrop-blur-sm transition-all duration-200 ${
+            draggedItem
+              ? 'border-red-400 bg-red-900/40 scale-105 shadow-lg shadow-red-500/20'
+              : 'border-red-500/50 hover:border-red-400'
+          }`}
         >
-          <span className="text-2xl mr-2">🗑️</span> Drag here to delete a box
+          <span className="text-2xl mr-2">🗑️</span>
+          {draggedItem ? 'Release to delete' : 'Drag here to delete a box'}
         </div>
 
         {/* Grid Area */}
-        <div className="bg-gray-800/30 backdrop-blur-sm p-6 rounded-xl border border-gray-700 shadow-2xl">
+        <div className="bg-gray-800/30 backdrop-blur-sm p-6 rounded-xl border border-gray-700 shadow-2xl overflow-x-auto">
           <div className="mb-4">
             <h2 className="text-xl font-semibold text-gray-200 flex items-center gap-2">
               <span className="text-blue-400">⚡</span> Design Canvas
             </h2>
           </div>
-          <div className="bg-gray-900/50 p-4 rounded-lg border border-gray-600">
+          <div className="bg-gray-900/50 p-4 rounded-lg border border-gray-600 min-w-[600px]">
             <GridLayout
               className="layout"
               layout={layout}
               cols={12}
               rowHeight={30}
-              width={1200}
+              width={gridWidth}
               onLayoutChange={setLayout}
-              onDrop={handleDrop}
+              onDragStart={handleDragStart}
+              onDragStop={handleDragStop}
               isDraggable
               isResizable
               compactType={null}
               preventCollision
             >
               {layout.map(item => (
-                <div key={item.i} className="relative bg-gradient-to-br from-slate-700 to-slate-800 border border-slate-600 rounded-lg p-3 shadow-lg hover:shadow-xl transition-all duration-200 backdrop-blur-sm">
+                <div
+                  key={item.i}
+                  className={`relative select-none bg-gradient-to-br from-slate-700 to-slate-800 border border-slate-600 rounded-lg p-3 shadow-lg hover:shadow-xl transition-all duration-200 backdrop-blur-sm ${
+                    draggedItem === item.i ? 'opacity-50 scale-95' : ''
+                  }`}
+                >
                   <button
                     onClick={() => removeItem(item.i)}
-                    className="absolute top-2 right-2 text-red-400 hover:text-red-300 hover:bg-red-500/20 rounded-full w-6 h-6 flex items-center justify-center transition-all duration-200"
+                    className="absolute select-none top-2 right-2 text-red-400 hover:text-red-300 hover:bg-red-500/20 rounded-full w-6 h-6 flex items-center justify-center transition-all duration-200 z-10"
                     title="Remove box"
                   >
                     ×
                   </button>
-                  <span className="text-sm font-medium text-gray-200">Box {item.i}</span>
+                  <span className="text-sm select-none font-medium text-gray-200">Box {item.i}</span>
                   <div className="mt-1 text-xs text-gray-400">
                     {item.w} × {item.h}
                   </div>
@@ -173,9 +226,9 @@ const GridBuilder = () => {
         <div className="text-center pt-8 border-t border-gray-700">
           <p className="text-gray-400 text-sm">
             Created with care by{' '}
-            <a 
-              href="https://github.com/ganguly" 
-              target="_blank" 
+            <a
+              href="https://github.com/ganguly"
+              target="_blank"
               rel="noopener noreferrer"
               className="text-blue-400 hover:text-blue-300 transition-colors duration-200 font-medium"
             >
