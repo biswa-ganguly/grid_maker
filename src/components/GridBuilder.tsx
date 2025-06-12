@@ -1,240 +1,516 @@
-'use client';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
+import { Trash2, Copy, Plus, Grid, Code,  Settings } from 'lucide-react';
 
-import { useRef, useState, useEffect } from 'react';
-import GridLayout, { type Layout, WidthProvider } from 'react-grid-layout';
-import type { ReactGridLayoutProps } from 'react-grid-layout';
-import 'react-grid-layout/css/styles.css';
-import 'react-resizable/css/styles.css';
+interface GridItem {
+  id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  label: string;
+}
 
-const ResponsiveGridLayout = WidthProvider(GridLayout);
+interface GridSettings {
+  cols: number;
+  rows: number;
+  gap: number;
+  cellSize: number;
+}
 
-const GridBuilder = () => {
-  const [layout, setLayout] = useState<Layout[]>([
-    { i: '1', x: 0, y: 0, w: 3, h: 2 },
+const GridBuilder: React.FC = () => {
+  const [items, setItems] = useState<GridItem[]>([
+    { id: '1', x: 0, y: 0, width: 3, height: 2, label: 'Header' },
+    { id: '2', x: 0, y: 2, width: 2, height: 3, label: 'Sidebar' },
+    { id: '3', x: 2, y: 2, width: 4, height: 3, label: 'Main Content' },
   ]);
-
-  const [codeFormat, setCodeFormat] = useState<'html' | 'react'>('html');
+  
+  const [settings, setSettings] = useState<GridSettings>({
+    cols: 12,
+    rows: 8,
+    gap: 16,
+    cellSize: 60
+  });
+  
+  const [selectedItem, setSelectedItem] = useState<string | null>(null);
   const [draggedItem, setDraggedItem] = useState<string | null>(null);
-  const binRef = useRef<HTMLDivElement | null>(null);
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const [gridWidth, setGridWidth] = useState<number>(1200);
+  const [isResizing, setIsResizing] = useState<string | null>(null);
+  const [codeFormat, setCodeFormat] = useState<'css' | 'tailwind' | 'scss'>('css');
+  const [showSettings, setShowSettings] = useState(false);
+  
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [itemStart, setItemStart] = useState({ x: 0, y: 0 });
 
-  useEffect(() => {
-    const updateWidth = () => {
-      if (containerRef.current) {
-        setGridWidth(containerRef.current.offsetWidth);
-      }
+  const gridWidth = settings.cols * settings.cellSize + (settings.cols - 1) * settings.gap;
+  const gridHeight = settings.rows * settings.cellSize + (settings.rows - 1) * settings.gap;
+
+  const snapToGrid = useCallback((x: number, y: number) => {
+    const cellWithGap = settings.cellSize + settings.gap;
+    const col = Math.round(x / cellWithGap);
+    const row = Math.round(y / cellWithGap);
+    return {
+      x: Math.max(0, Math.min(col, settings.cols - 1)),
+      y: Math.max(0, Math.min(row, settings.rows - 1))
     };
+  }, [settings]);
 
-    updateWidth();
-    const observer = new ResizeObserver(updateWidth);
-    if (containerRef.current) observer.observe(containerRef.current);
+  const getItemStyle = (item: GridItem): React.CSSProperties => ({
+    position: 'absolute',
+    left: item.x * (settings.cellSize + settings.gap),
+    top: item.y * (settings.cellSize + settings.gap),
+    width: item.width * settings.cellSize + (item.width - 1) * settings.gap,
+    height: item.height * settings.cellSize + (item.height - 1) * settings.gap,
+    zIndex: selectedItem === item.id ? 10 : 1,
+  });
 
-    return () => observer.disconnect();
+  const handleMouseDown = (e: React.MouseEvent, itemId: string, action: 'drag' | 'resize') => {
+    e.preventDefault();
+    const item = items.find(i => i.id === itemId);
+    if (!item) return;
+
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+
+    setSelectedItem(itemId);
+    setDragStart({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+    setItemStart({ x: item.x, y: item.y });
+
+    if (action === 'drag') {
+      setDraggedItem(itemId);
+    } else {
+      setIsResizing(itemId);
+    }
+  };
+
+  const handleMouseMove = useCallback((e: MouseEvent) => {
+    if (!draggedItem && !isResizing) return;
+    
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+
+    const currentX = e.clientX - rect.left;
+    const currentY = e.clientY - rect.top;
+    const deltaX = currentX - dragStart.x;
+    const deltaY = currentY - dragStart.y;
+
+    if (draggedItem) {
+      const newPos = snapToGrid(
+        itemStart.x * (settings.cellSize + settings.gap) + deltaX,
+        itemStart.y * (settings.cellSize + settings.gap) + deltaY
+      );
+      
+      setItems(prev => prev.map(item => 
+        item.id === draggedItem 
+          ? { ...item, x: newPos.x, y: newPos.y }
+          : item
+      ));
+    } else if (isResizing) {
+      const cellWithGap = settings.cellSize + settings.gap;
+      const newWidth = Math.max(1, Math.round((deltaX + settings.cellSize) / cellWithGap));
+      const newHeight = Math.max(1, Math.round((deltaY + settings.cellSize) / cellWithGap));
+      
+      setItems(prev => prev.map(item => 
+        item.id === isResizing
+          ? { 
+              ...item, 
+              width: Math.min(newWidth, settings.cols - item.x),
+              height: Math.min(newHeight, settings.rows - item.y)
+            }
+          : item
+      ));
+    }
+  }, [draggedItem, isResizing, dragStart, itemStart, settings, snapToGrid]);
+
+  const handleMouseUp = useCallback(() => {
+    setDraggedItem(null);
+    setIsResizing(null);
   }, []);
 
+  useEffect(() => {
+    if (draggedItem || isResizing) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+      return () => {
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mouseup', handleMouseUp);
+      };
+    }
+  }, [draggedItem, isResizing, handleMouseMove, handleMouseUp]);
+
   const addItem = () => {
-    const newItem: Layout = {
-      i: String(Date.now()),
-      x: (layout.length * 3) % 12,
-      y: Infinity,
-      w: 3,
-      h: 2,
+    const newItem: GridItem = {
+      id: Date.now().toString(),
+      x: 0,
+      y: 0,
+      width: 2,
+      height: 2,
+      label: `Item ${items.length + 1}`
     };
-    setLayout(prev => [...prev, newItem]);
+    setItems(prev => [...prev, newItem]);
+    setSelectedItem(newItem.id);
   };
 
   const removeItem = (id: string) => {
-    setLayout(prev => prev.filter(item => item.i !== id));
+    setItems(prev => prev.filter(item => item.id !== id));
+    setSelectedItem(null);
   };
 
   const generateCode = () => {
-    return layout
-      .map(item => {
-        const classNames = `col-span-${item.w} row-span-${item.h} bg-gray-100 p-4 rounded-lg shadow-sm`;
-        return codeFormat === 'html'
-          ? `<div class="${classNames}">Box ${item.i}</div>`
-          : `<div className="${classNames}">Box ${item.i}</div>`;
-      })
-      .join('\n');
+    const containerClass = codeFormat === 'tailwind' 
+      ? `grid grid-cols-${settings.cols} gap-${Math.round(settings.gap / 4)}`
+      : 'grid-container';
+
+    const containerCSS = codeFormat === 'css' 
+      ? `.grid-container {
+  display: grid;
+  grid-template-columns: repeat(${settings.cols}, 1fr);
+  gap: ${settings.gap}px;
+  width: 100%;
+  max-width: ${gridWidth}px;
+  margin: 0 auto;
+}`
+      : codeFormat === 'scss'
+      ? `$grid-cols: ${settings.cols};
+$grid-gap: ${settings.gap}px;
+
+.grid-container {
+  display: grid;
+  grid-template-columns: repeat($grid-cols, 1fr);
+  gap: $grid-gap;
+  width: 100%;
+  max-width: ${gridWidth}px;
+  margin: 0 auto;
+}`
+      : '';
+
+    const itemsCode = items.map(item => {
+      const itemClass = codeFormat === 'tailwind'
+        ? `col-span-${item.width} row-span-${item.height}`
+        : `grid-item-${item.id}`;
+      
+      const itemCSS = codeFormat === 'css'
+        ? `.grid-item-${item.id} {
+  grid-column: span ${item.width};
+  grid-row: span ${item.height};
+}`
+        : codeFormat === 'scss'
+        ? `.grid-item-${item.id} {
+  grid-column: span ${item.width};
+  grid-row: span ${item.height};
+}`
+        : '';
+
+      return {
+        html: `<div class="${itemClass}">${item.label}</div>`,
+        css: itemCSS
+      };
+    });
+
+    const htmlCode = `<div class="${containerClass}">
+${itemsCode.map(item => '  ' + item.html).join('\n')}
+</div>`;
+
+    const cssCode = codeFormat !== 'tailwind' 
+      ? `${containerCSS}\n\n${itemsCode.map(item => item.css).join('\n\n')}`
+      : '';
+
+    return { html: htmlCode, css: cssCode };
   };
 
   const copyToClipboard = () => {
-    const code = `<div class="${codeFormat === 'html' ? 'grid grid-cols-12 gap-4' : 'grid grid-cols-12 gap-4'}">\n${generateCode()}\n</div>`;
-    if (typeof window !== 'undefined') {
-      navigator.clipboard.writeText(code);
-      alert('Code copied to clipboard!');
-    }
+    const code = generateCode();
+    const fullCode = codeFormat === 'tailwind' 
+      ? code.html 
+      : `${code.css}\n\n${code.html}`;
+    
+    navigator.clipboard.writeText(fullCode);
+    alert('Code copied to clipboard!');
   };
 
-  const handleDragStart: ReactGridLayoutProps['onDragStart'] = (
-    _layout,
-    oldItem
-  ) => {
-    setDraggedItem(oldItem.i);
-  };
-
-  const handleDragStop: ReactGridLayoutProps['onDragStop'] = (
-    _layout,
-    _oldItem,
-    _newItem,
-    _placeholder,
-    e
-  ) => {
-    if (!binRef.current || !draggedItem) {
-      setDraggedItem(null);
-      return;
-    }
-
-    const binRect = binRef.current.getBoundingClientRect();
-    const mouseX = e.clientX;
-    const mouseY = e.clientY;
-
-    const isOverBin =
-      mouseX >= binRect.left &&
-      mouseX <= binRect.right &&
-      mouseY >= binRect.top &&
-      mouseY <= binRect.bottom;
-
-    if (isOverBin) {
-      removeItem(draggedItem);
-    }
-
-    setDraggedItem(null);
-  };
+  const selectedItemData = items.find(item => item.id === selectedItem);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-slate-900 to-black text-white px-4">
-      <div className="p-6 max-w-7xl mx-auto space-y-8" ref={containerRef}>
+    <div className="min-h-screen bg-gray-900 p-6">
+      <div className="max-w-7xl mx-auto space-y-6">
         {/* Header */}
-        <div className="text-center border-b border-gray-700 pb-6">
-          <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent mb-2">
-            Grid Builder Pro
-          </h1>
-          <p className="text-gray-400 text-lg">Professional CSS Grid Layout Designer</p>
-        </div>
-
-        {/* Toolbar */}
-        <div className="flex flex-wrap justify-between items-center gap-4 bg-gray-800/50 backdrop-blur-sm p-6 rounded-xl border border-gray-700">
-          <div className="flex gap-3 flex-wrap">
-            <button
-              onClick={addItem}
-              className="px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg hover:from-blue-700 hover:to-blue-800 transition-all duration-200 shadow-lg hover:shadow-blue-500/20 font-medium flex items-center gap-2"
-            >
-              <span className="text-lg">+</span> Add Box
-            </button>
-            <button
-              onClick={copyToClipboard}
-              className="px-6 py-3 bg-gradient-to-r from-emerald-600 to-emerald-700 text-white rounded-lg hover:from-emerald-700 hover:to-emerald-800 transition-all duration-200 shadow-lg hover:shadow-emerald-500/20 font-medium flex items-center gap-2"
-            >
-              <span className="text-lg">📋</span> Copy Code
-            </button>
-          </div>
-          <div className="flex items-center gap-3">
-            <label className="text-sm font-medium text-gray-300">Code Format:</label>
-            <select
-              value={codeFormat}
-              onChange={e => setCodeFormat(e.target.value as 'html' | 'react')}
-              className="px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            >
-              <option value="html">HTML + Tailwind</option>
-              <option value="react">React JSX + Tailwind</option>
-            </select>
-          </div>
-        </div>
-
-        {/* Bin Area */}
-        <div
-          ref={binRef}
-          className={`h-20 bg-gradient-to-r from-red-900/20 to-red-800/20 border-2 border-dashed rounded-xl flex items-center justify-center text-red-400 font-semibold text-lg backdrop-blur-sm transition-all duration-200 ${
-            draggedItem
-              ? 'border-red-400 bg-red-900/40 scale-105 shadow-lg shadow-red-500/20'
-              : 'border-red-500/50 hover:border-red-400'
-          }`}
-        >
-          <span className="text-2xl mr-2">🗑️</span>
-          {draggedItem ? 'Release to delete' : 'Drag here to delete a box'}
-        </div>
-
-        {/* Grid Area */}
-        <div className="bg-gray-800/30 backdrop-blur-sm p-6 rounded-xl border border-gray-700 shadow-2xl overflow-x-auto">
-          <div className="mb-4">
-            <h2 className="text-xl font-semibold text-gray-200 flex items-center gap-2">
-              <span className="text-blue-400">⚡</span> Design Canvas
-            </h2>
-          </div>
-          <div className="bg-gray-900/50 p-4 rounded-lg border border-gray-600 min-w-[600px]">
-            <ResponsiveGridLayout
-              className="layout"
-              layout={layout}
-              cols={12}
-              rowHeight={30}
-              width={gridWidth}
-              onLayoutChange={setLayout}
-              onDragStart={handleDragStart}
-              onDragStop={handleDragStop}
-              isDraggable
-              isResizable
-              compactType={null}
-              preventCollision
-            >
-              {layout.map(item => (
-                <div
-                  key={item.i}
-                  className={`relative select-none bg-gradient-to-br from-slate-700 to-slate-800 border border-slate-600 rounded-lg p-3 shadow-lg hover:shadow-xl transition-all duration-200 backdrop-blur-sm ${
-                    draggedItem === item.i ? 'opacity-50 scale-95' : ''
-                  }`}
-                >
-                  <button
-                    onClick={() => removeItem(item.i)}
-                    className="absolute select-none top-2 right-2 text-red-400 hover:text-red-300 hover:bg-red-500/20 rounded-full w-6 h-6 flex items-center justify-center transition-all duration-200 z-10"
-                    title="Remove box"
-                  >
-                    ×
-                  </button>
-                  <span className="text-sm select-none font-medium text-gray-200">Box {item.i}</span>
-                  <div className="mt-1 text-xs text-gray-400">
-                    {item.w} × {item.h}
-                  </div>
-                </div>
-              ))}
-            </ResponsiveGridLayout>
-          </div>
-        </div>
-
-        {/* Code Output */}
-        <div className="bg-gray-800/30 backdrop-blur-sm p-6 rounded-xl border border-gray-700">
-          <h2 className="font-bold text-xl mb-4 text-gray-200 flex items-center gap-2">
-            <span className="text-green-400">🔧</span> Generated Code
-          </h2>
-          <div className="relative">
-            <pre className="bg-black/80 text-green-400 p-6 rounded-lg text-sm whitespace-pre-wrap overflow-x-auto border border-gray-600 font-mono leading-relaxed">
-{`<div class="${codeFormat === 'html' ? 'grid grid-cols-12 gap-4' : 'grid grid-cols-12 gap-4'}">\n${generateCode()}\n</div>`}
-            </pre>
-            <div className="absolute top-4 right-4">
+        <div className="bg-white rounded-lg shadow-sm border p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+                <Grid className="w-6 h-6 text-blue-600" />
+                Professional Grid Builder
+              </h1>
+              <p className="text-gray-600 mt-1">Design responsive grid layouts with precision</p>
+            </div>
+            <div className="flex gap-2">
               <button
-                onClick={copyToClipboard}
-                className="px-3 py-1 bg-gray-700/80 hover:bg-gray-600/80 text-gray-300 text-xs rounded transition-colors duration-200"
+                onClick={() => setShowSettings(!showSettings)}
+                className="flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
               >
-                Copy
+                <Settings className="w-4 h-4" />
+                Settings
               </button>
             </div>
           </div>
         </div>
 
-        {/* Attribution */}
-        <div className="text-center pt-8 border-t border-gray-700">
-          <p className="text-gray-400 text-sm">
-            Created and Crafted with Care by{' '}
-            <a
-              href="https://github.com/biswa-ganguly"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-blue-400 hover:text-blue-300 transition-colors duration-200 font-medium"
-            >
-              @ganguly
-            </a>
-          </p>
+        {/* Settings Panel */}
+        {showSettings && (
+          <div className="bg-white rounded-lg shadow-sm border p-6">
+            <h3 className="font-semibold text-gray-900 mb-4">Grid Settings</h3>
+            <div className="grid grid-cols-4 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Columns</label>
+                <input
+                  type="number"
+                  value={settings.cols}
+                  onChange={(e) => setSettings(prev => ({ ...prev, cols: parseInt(e.target.value) || 12 }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  min="1"
+                  max="24"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Rows</label>
+                <input
+                  type="number"
+                  value={settings.rows}
+                  onChange={(e) => setSettings(prev => ({ ...prev, rows: parseInt(e.target.value) || 8 }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  min="1"
+                  max="20"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Gap (px)</label>
+                <input
+                  type="number"
+                  value={settings.gap}
+                  onChange={(e) => setSettings(prev => ({ ...prev, gap: parseInt(e.target.value) || 16 }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  min="0"
+                  max="50"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Cell Size (px)</label>
+                <input
+                  type="number"
+                  value={settings.cellSize}
+                  onChange={(e) => setSettings(prev => ({ ...prev, cellSize: parseInt(e.target.value) || 60 }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  min="30"
+                  max="150"
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Toolbar */}
+        <div className="bg-white rounded-lg shadow-sm border p-4">
+          <div className="flex items-center justify-between flex-wrap gap-4">
+            <div className="flex gap-2">
+              <button
+                onClick={addItem}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+              >
+                <Plus className="w-4 h-4" />
+                Add Item
+              </button>
+              {selectedItem && (
+                <button
+                  onClick={() => removeItem(selectedItem)}
+                  className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Remove
+                </button>
+              )}
+            </div>
+            <div className="flex items-center gap-4">
+              <select
+                value={codeFormat}
+                onChange={(e) => setCodeFormat(e.target.value as 'css' | 'tailwind' | 'scss')}
+                className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="css">CSS Grid</option>
+                <option value="scss">SCSS Grid</option>
+                <option value="tailwind">Tailwind CSS</option>
+              </select>
+              <button
+                onClick={copyToClipboard}
+                className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors"
+              >
+                <Copy className="w-4 h-4" />
+                Copy Code
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Grid Designer */}
+          <div className="lg:col-span-2">
+            <div className="bg-white rounded-lg shadow-sm border p-6">
+              <h3 className="font-semibold text-gray-900 mb-4">Design Canvas</h3>
+              <div className="overflow-auto border-2 border-gray-200 rounded-lg p-4 bg-gray-50">
+                <div
+                  ref={containerRef}
+                  className="relative bg-white border border-gray-300 rounded-lg"
+                  style={{
+                    width: gridWidth,
+                    height: gridHeight,
+                    backgroundImage: `
+                      linear-gradient(to right, #e5e7eb 1px, transparent 1px),
+                      linear-gradient(to bottom, #e5e7eb 1px, transparent 1px)
+                    `,
+                    backgroundSize: `${settings.cellSize + settings.gap}px ${settings.cellSize + settings.gap}px`,
+                    backgroundPosition: `${settings.gap / 2}px ${settings.gap / 2}px`
+                  }}
+                >
+                  {/* Grid Items */}
+                  {items.map(item => (
+                    <div
+                      key={item.id}
+                      className={`bg-blue-100 border-2 rounded-lg cursor-move transition-all duration-200 ${
+                        selectedItem === item.id
+                          ? 'border-blue-500 shadow-lg'
+                          : 'border-blue-300 hover:border-blue-400'
+                      }`}
+                      style={getItemStyle(item)}
+                      onMouseDown={(e) => handleMouseDown(e, item.id, 'drag')}
+                      onClick={() => setSelectedItem(item.id)}
+                    >
+                      <div className="p-2 h-full flex flex-col">
+                        <input
+                          type="text"
+                          value={item.label}
+                          onChange={(e) => setItems(prev => prev.map(i => 
+                            i.id === item.id ? { ...i, label: e.target.value } : i
+                          ))}
+                          className="bg-transparent border-none outline-none text-sm font-medium text-gray-700 w-full"
+                          onMouseDown={(e) => e.stopPropagation()}
+                        />
+                        <div className="text-xs text-gray-500 mt-auto">
+                          {item.width} × {item.height}
+                        </div>
+                      </div>
+                      {/* Resize Handle */}
+                      <div
+                        className="absolute bottom-0 right-0 w-4 h-4 bg-blue-500 cursor-se-resize opacity-0 hover:opacity-100 transition-opacity"
+                        style={{ clipPath: 'polygon(100% 0, 0 100%, 100% 100%)' }}
+                        onMouseDown={(e) => {
+                          e.stopPropagation();
+                          handleMouseDown(e, item.id, 'resize');
+                        }}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Properties Panel */}
+          <div className="space-y-6">
+            {/* Item Properties */}
+            <div className="bg-white rounded-lg shadow-sm border p-6">
+              <h3 className="font-semibold text-gray-900 mb-4">Item Properties</h3>
+              {selectedItemData ? (
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Label</label>
+                    <input
+                      type="text"
+                      value={selectedItemData.label}
+                      onChange={(e) => setItems(prev => prev.map(item => 
+                        item.id === selectedItem ? { ...item, label: e.target.value } : item
+                      ))}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Width</label>
+                      <input
+                        type="number"
+                        value={selectedItemData.width}
+                        onChange={(e) => setItems(prev => prev.map(item => 
+                          item.id === selectedItem 
+                            ? { ...item, width: Math.max(1, Math.min(parseInt(e.target.value) || 1, settings.cols - item.x)) }
+                            : item
+                        ))}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        min="1"
+                        max={settings.cols - selectedItemData.x}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Height</label>
+                      <input
+                        type="number"
+                        value={selectedItemData.height}
+                        onChange={(e) => setItems(prev => prev.map(item => 
+                          item.id === selectedItem 
+                            ? { ...item, height: Math.max(1, Math.min(parseInt(e.target.value) || 1, settings.rows - item.y)) }
+                            : item
+                        ))}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        min="1"
+                        max={settings.rows - selectedItemData.y}
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">X Position</label>
+                      <input
+                        type="number"
+                        value={selectedItemData.x}
+                        onChange={(e) => setItems(prev => prev.map(item => 
+                          item.id === selectedItem 
+                            ? { ...item, x: Math.max(0, Math.min(parseInt(e.target.value) || 0, settings.cols - item.width)) }
+                            : item
+                        ))}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        min="0"
+                        max={settings.cols - selectedItemData.width}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Y Position</label>
+                      <input
+                        type="number"
+                        value={selectedItemData.y}
+                        onChange={(e) => setItems(prev => prev.map(item => 
+                          item.id === selectedItem 
+                            ? { ...item, y: Math.max(0, Math.min(parseInt(e.target.value) || 0, settings.rows - item.height)) }
+                            : item
+                        ))}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        min="0"
+                        max={settings.rows - selectedItemData.height}
+                      />
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-gray-500 text-sm">Select an item to edit its properties</p>
+              )}
+            </div>
+
+            {/* Code Preview */}
+            <div className="bg-white rounded-lg shadow-sm border p-6">
+              <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                <Code className="w-4 h-4" />
+                Code Preview
+              </h3>
+              <div className="bg-gray-900 rounded-lg p-4 text-sm text-green-400 font-mono overflow-auto max-h-80">
+                <pre>{codeFormat === 'tailwind' ? generateCode().html : `${generateCode().css}\n\n${generateCode().html}`}</pre>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
