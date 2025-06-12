@@ -230,7 +230,7 @@ ${itemsCode.map(item => '  ' + item.html).join('\n')}
   const selectedItemData = items.find(item => item.id === selectedItem);
 
   return (
-    <div className="min-h-screen bg-gray-900 p-6">
+    <div className="min-h-screen font-mono bg-gray-900 p-6">
       <div className="max-w-7xl mx-auto space-y-6">
         {/* Header */}
         <div className="bg-white rounded-lg shadow-sm border p-6">
@@ -238,7 +238,7 @@ ${itemsCode.map(item => '  ' + item.html).join('\n')}
             <div>
               <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
                 <Grid className="w-6 h-6 text-blue-600" />
-                Professional Grid Builder
+                 Grid Builder Pro
               </h1>
               <p className="text-gray-600 mt-1">Design responsive grid layouts with precision</p>
             </div>
